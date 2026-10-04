@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     policy_upload_dir: str = "/app/storage/hr-policies"
     profile_photo_upload_dir: str = "/app/storage/profile-photos"
     employee_document_upload_dir: str = "/app/storage/employee-documents"
+    cors_origins: list[str] = ["http://localhost:3000"]
 
 
 settings = Settings()
