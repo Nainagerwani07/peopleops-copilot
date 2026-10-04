@@ -73,6 +73,43 @@ async def _get_or_create_leave_balance(
     return balance
 
 
+async def _get_actionable_leave(
+    db: AsyncSession,
+    request_id: int,
+    current_user: Employee,
+    action: str,
+) -> LeaveRequest:
+    """Load a leave request the current user may approve/reject.
+
+    Managers may act only on their direct reports' requests, never their own. A request
+    outside the manager's team returns 404 (same as a missing id) so its existence is not leaked.
+    """
+    if current_user.role not in {Role.ADMIN, Role.MANAGER}:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=error_response("FORBIDDEN", f"Only manager/admin can {action} leave"),
+        )
+
+    result = await db.execute(
+        select(LeaveRequest, Employee.manager_id)
+        .join(Employee, Employee.id == LeaveRequest.employee_id)
+        .where(LeaveRequest.id == request_id)
+    )
+    row = result.one_or_none()
+    if current_user.role == Role.MANAGER and row is not None:
+        leave, requester_manager_id = row
+        if leave.employee_id == current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=error_response("LEAVE_SELF_APPROVAL", f"You cannot {action} your own leave request"),
+            )
+        if requester_manager_id != current_user.id:
+            row = None
+    if row is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=error_response("LEAVE_NOT_FOUND", "Leave request not found"))
+    return row[0]
+
+
 @router.get("/balances/me")
 async def my_leave_balances(current_user: Employee = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     balances: list[LeaveBalance] = []
@@ -244,10 +281,24 @@ async def pending_leave_requests(
             detail=error_response("FORBIDDEN", "Only manager/admin can view pending leave approvals"),
         )
 
-    count_q = select(func.count(LeaveRequest.id)).where(LeaveRequest.status == LeaveRequestStatus.PENDING)
+    conditions = [LeaveRequest.status == LeaveRequestStatus.PENDING]
+    if current_user.role == Role.MANAGER:
+        # Direct reports only; a manager is never their own manager, so own requests are excluded too.
+        conditions.append(Employee.manager_id == current_user.id)
+
+    count_q = (
+        select(func.count(LeaveRequest.id))
+        .join(Employee, Employee.id == LeaveRequest.employee_id)
+        .where(*conditions)
+    )
     total = (await db.execute(count_q)).scalar_one()
     result = await db.execute(
-        select(LeaveRequest).where(LeaveRequest.status == LeaveRequestStatus.PENDING).order_by(LeaveRequest.id.desc()).limit(limit).offset(offset)
+        select(LeaveRequest)
+        .join(Employee, Employee.id == LeaveRequest.employee_id)
+        .where(*conditions)
+        .order_by(LeaveRequest.id.desc())
+        .limit(limit)
+        .offset(offset)
     )
     requests = result.scalars().all()
 
@@ -279,16 +330,7 @@ async def approve_leave_request(
     current_user: Employee = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    if current_user.role not in {Role.ADMIN, Role.MANAGER}:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=error_response("FORBIDDEN", "Only manager/admin can approve leave"),
-        )
-
-    result = await db.execute(select(LeaveRequest).where(LeaveRequest.id == request_id))
-    leave = result.scalar_one_or_none()
-    if leave is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=error_response("LEAVE_NOT_FOUND", "Leave request not found"))
+    leave = await _get_actionable_leave(db, request_id, current_user, "approve")
     if leave.status != LeaveRequestStatus.PENDING:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -333,16 +375,7 @@ async def reject_leave_request(
     current_user: Employee = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    if current_user.role not in {Role.ADMIN, Role.MANAGER}:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=error_response("FORBIDDEN", "Only manager/admin can reject leave"),
-        )
-
-    result = await db.execute(select(LeaveRequest).where(LeaveRequest.id == request_id))
-    leave = result.scalar_one_or_none()
-    if leave is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=error_response("LEAVE_NOT_FOUND", "Leave request not found"))
+    leave = await _get_actionable_leave(db, request_id, current_user, "reject")
     if leave.status != LeaveRequestStatus.PENDING:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
