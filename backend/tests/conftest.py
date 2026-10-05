@@ -10,6 +10,8 @@ from datetime import date
 
 import pytest
 from httpx import ASGITransport, AsyncClient
+from langchain_community.cache import SQLiteCache
+from langchain_core.globals import set_llm_cache
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 import app.models  # noqa: F401  (registers every table on Base.metadata)
@@ -19,6 +21,10 @@ from app.db.session import get_db
 from app.main import app
 from app.models.employee import Employee
 from app.models.enums import Role
+
+# Free-tier quota is tiny: replay identical LLM calls (same prompt + message + model) from disk.
+# A changed prompt is a new cache key, so it still hits the real API.
+set_llm_cache(SQLiteCache(database_path=".pytest_cache/llm_cache.db"))
 
 
 @pytest.fixture

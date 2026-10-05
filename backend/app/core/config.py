@@ -20,8 +20,9 @@ class Settings(BaseSettings):
 
     # AI layer
     llm_provider: str = "google_genai"
-    llm_model: str = "gemini-3.5-flash"
+    llm_model: str = "gemini-3.5-flash-lite"  # free tier: 15 RPM, 500 RPD
     gemini_api_key: str = ""
+    llm_requests_per_minute: int = 15
 
 
 settings = Settings()
