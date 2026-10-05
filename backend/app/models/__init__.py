@@ -17,3 +17,4 @@ from app.models.poll_response import PollResponse
 from app.models.project import Project
 from app.models.skill import Skill
 from app.models.ticket import Ticket
+from app.models.ai_audit_log import AiAuditLog
