@@ -18,5 +18,10 @@ class Settings(BaseSettings):
     employee_document_upload_dir: str = "/app/storage/employee-documents"
     cors_origins: list[str] = ["http://localhost:3000"]
 
+    # AI layer
+    llm_provider: str = "google_genai"
+    llm_model: str = "gemini-3.5-flash"
+    gemini_api_key: str = ""
+
 
 settings = Settings()
