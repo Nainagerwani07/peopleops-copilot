@@ -4,6 +4,7 @@ This writes only to the AI layer's own ai_audit_logs table, never to HR business
 """
 
 import json
+import re
 from typing import Literal
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -21,14 +22,25 @@ MAX_MESSAGE_CHARS = 2000
 def redact(text: str) -> str:
     """Mask secrets and sensitive identifiers a user might paste into a chat message.
 
-    YOUR TASK (M1 chunk 3). Spec: tests/test_audit.py::test_redact_*
-    Replace, using regular expressions (`re.sub`):
-      - JWTs (three base64url parts joined by dots, starting with "eyJ")  → "[REDACTED_TOKEN]"
-      - PAN numbers (5 uppercase letters, 4 digits, 1 uppercase letter)   → "[REDACTED_PAN]"
-      - long digit runs, 9 or more digits (bank accounts, phone numbers)  → "[REDACTED_NUMBER]"
-    Ordinary text, dates ("2026-11-02") and short ids ("ticket 42") must stay unchanged.
+    Masks by shape, not meaning: spaced-out numbers ("1234 5678 9012") and lowercase PANs
+    are not caught. Masking slightly too much is the safe direction.
     """
-    raise NotImplementedError
+    text = re.sub(
+        r"eyJ[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+",
+        "[REDACTED_TOKEN]",
+        text
+    )
+    text = re.sub(
+        r"\b[A-Z]{5}\d{4}[A-Z]\b",
+        "[REDACTED_PAN]",
+        text
+    )
+    text = re.sub(
+        r"\b\d{9,}\b",
+        "[REDACTED_NUMBER]",
+        text
+    )
+    return text
 
 
 async def log_ai_event(
