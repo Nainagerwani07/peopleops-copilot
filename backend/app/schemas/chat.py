@@ -8,3 +8,7 @@ class ChatSessionCreate(BaseModel):
 class ChatMessageCreate(BaseModel):
     role: str = Field(min_length=3, max_length=20)
     content: str = Field(min_length=1, max_length=4000)
+
+
+class AIChatRequest(BaseModel):
+    message: str = Field(min_length=1, max_length=4000)
