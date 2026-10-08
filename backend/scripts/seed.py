@@ -496,36 +496,35 @@ async def seed():
         session.add(PollResponse(poll_id=poll.id, employee_id=employee_user_id, option_index=0))
         session.add(PollResponse(poll_id=poll.id, employee_id=admin_user_id, option_index=1))
 
-        policies = [
-            ("Leave Policy", "Employees can avail casual, sick, and earned leave as per allocated balances."),
-            ("Attendance Policy", "Clock-in should be completed before 9:30 AM on working days."),
-            ("WFH Policy", "Work from home requests require manager approval for planned leaves."),
-            ("Code of Conduct", "All employees must follow professional communication standards."),
-            ("Travel Reimbursement", "Travel claims must be submitted within 15 days of return."),
-            ("Data Security", "Sensitive company data must be accessed only on approved devices."),
-            ("Laptop Usage", "Company laptops should not be shared with unauthorized users."),
-            ("Information Classification", "Documents must be tagged based on internal classification guidelines."),
-            ("Incident Reporting", "Security incidents should be reported to IT within 1 hour."),
-            ("Onboarding SLA", "New joiners should receive system access within two business days."),
+        # Full policy documents for the Policy RAG live in backend/data/policies/. They also cover the topics
+        # of the earlier one-liners (e.g. Expense, Dress Code, Comp Off); topics they don't cover stay one-liners.
+        policy_docs = [
+            "leave_policy.md",
+            "attendance_policy.md",
+            "wfh_policy.md",
+            "reimbursement_policy.md",
+            "code_of_conduct.md",
+            "probation_and_separation_policy.md",
+            "holiday_and_comp_off_policy.md",
+            "it_and_data_security_policy.md",
+        ]
+        one_line_policies = [
             ("ID Card Policy", "Employees must carry ID cards inside office premises."),
             ("Performance Review", "Mid-year and annual reviews are mandatory for all full-time staff."),
-            ("Probation Policy", "Probation period is six months unless explicitly waived."),
-            ("Grievance Policy", "Employees may raise grievances through HR ticket workflow."),
-            ("Expense Policy", "Business expenses require valid invoices and manager approval."),
-            ("Dress Code", "Employees should maintain business-casual attire in office."),
-            ("Holiday Policy", "National holidays are predefined in annual HR calendar."),
-            ("Comp Off Policy", "Comp-off requests are valid for 60 days from earning date."),
-            ("Overtime Policy", "Overtime requires prior manager acknowledgement."),
-            ("Separation Policy", "Exit clearance must complete before final settlement is processed."),
             ("Background Verification", "All hires are subject to background verification checks."),
-            ("Communication Policy", "Official communication should use company-approved channels."),
         ]
+        policy_docs_dir = Path(__file__).resolve().parents[1] / "data" / "policies"
+        policies = []  # (title, markdown body)
+        for name in policy_docs:
+            body = (policy_docs_dir / name).read_text(encoding="utf-8")
+            policies.append((body.splitlines()[0].removeprefix("# "), body))
+        policies += [(title, f"# {title}\n\n{content}\n") for title, content in one_line_policies]
+
         upload_dir = Path(settings.policy_upload_dir)
         upload_dir.mkdir(parents=True, exist_ok=True)
-        for index, (title, content) in enumerate(policies, start=1):
+        for index, (title, body) in enumerate(policies, start=1):
             stored_name = f"seed_policy_{index:02d}.md"
             stored_path = upload_dir / stored_name
-            body = f"# {title}\n\n{content}\n"
             raw = body.encode("utf-8")
             stored_path.write_bytes(raw)
             session.add(
