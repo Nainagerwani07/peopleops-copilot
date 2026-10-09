@@ -16,7 +16,8 @@ The assignment spec is in `docs/assignment/` (local only).
 
 ## How we work
 - One milestone at a time: learn → design → implement → review → test. Move on only when the user says so.
-- Work in **small chunks**, a few files and one concern each. After each chunk, list what to **review deeply** (concept code) and what to skim (boilerplate).
+- Work in **small chunks**, a few files and one concern each. After each chunk, give a short summary in chat: a table of the changed files, a walkthrough of one example request, and what to **review deeply** versus skim. The user should not have to open every file to understand the chunk.
+- **Never commit until the user has reviewed the chunk and says "commit".** Leave changes uncommitted so they show in VS Code's Source Control panel; that is the review view.
 - **Minimal code.** No speculative abstractions.
 - The user writes the core AI logic (guardrails, prompts, retrieval, permissions). Claude writes the boilerplate and reviews.
 - Test-first for security rules: write the failing test, then fix.
