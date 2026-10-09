@@ -23,6 +23,8 @@ class Settings(BaseSettings):
     llm_model: str = "gemini-3.5-flash-lite"  # free tier: 15 RPM, 500 RPD
     gemini_api_key: str = ""
     llm_requests_per_minute: int = 15
+    embedding_model: str = "models/gemini-embedding-001"  # indexing and search must use the same model
+    vector_store_dir: str = "./storage/vector_store"  # Chroma files (gitignored); rebuild with scripts/index_policies.py
 
 
 settings = Settings()
