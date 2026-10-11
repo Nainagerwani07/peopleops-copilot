@@ -85,3 +85,40 @@ So layer 1 blocks only what's *clearly* irrelevant, and layer 2 handles the bord
 The same eval checks retrieval with **hit@3** (is the expected section in the top 3?). A miss there is a retrieval bug
 that no threshold or prompt can fix. **Re-run the eval** when the embedding model, the chunking or the policies change,
 because scores shift with each of these.
+
+## Experiment: 5 chunking strategies compared (`backend/scripts/compare_chunking.py`)
+
+No model or library does our chunking: it's plain Python rules (regex on `## `, blank lines, sentence endings).
+Libraries do the same (LangChain `RecursiveCharacterTextSplitter`, `MarkdownHeaderTextSplitter`); only *semantic*,
+*LLM/agentic* and *layout-aware* (PDF) chunking use a model to decide where to cut.
+
+Same 8 policies, 15 questions, gemini-embedding-001. A question is a "hit" if the chunk contains the exact answer sentence.
+
+| Strategy | Chunks | hit@1 | hit@3 | Text the LLM reads (top 3) |
+|---|---|---|---|---|
+| 1 Whole document | 8 | 14/15 | 15/15 | 4,304 chars |
+| 2 Fixed 300 (overlap 50) | 49 | 12/15 | 15/15 | 819 |
+| 3 One sentence | 112 | 13/15 | 15/15 | 269 |
+| 4 Heading only | 40 | 13/15 | 15/15 | 1,059 |
+| 5 Ours (`chunk_policy`) | 42 | 14/15 | 15/15 | 1,107 |
+
+Findings:
+- **Fixed size is the worst:** chunks start mid-word and mix topics ("carry over vacation" → a casual-leave chunk).
+- **The `Policy > Section` prefix matters:** "doctor's note if sick 3 days?" → heading-only returned Attendance > Absence
+  Without Notice; ours returned Leave Policy > Sick Leave.
+- **One sentence scores highest (0.75–0.86) but loses context:** for "manager alone approve ₹20k?" its top hit was
+  "Claims of up to INR 5,000 are approved by the reporting manager alone", which suggests the **wrong** answer. The deciding
+  rule is the next sentence. High similarity ≠ complete answer.
+- **Whole document only "wins" because there are 8 documents.** It sends 4× the text, and big chunks **dilute scores**
+  (hotel question 0.608 vs out-of-scope 0.602), which breaks the refusal threshold.
+- **The eval itself was too easy:** hit@3 = 15/15 for everyone, and 1-question differences are noise. The exact-sentence
+  check also under-counts (ours' "miss" on the travel deadline actually contained the answer). Real evals need harder,
+  more varied questions and a scoring check that matches what "answered" means.
+- Free tier: **each text counts as one embedding request even inside a batch** (100/min). Indexing more than 100 chunks
+  needs batching + retry; `index_policies.py` doesn't do that yet.
+
+Run: `cd backend && PYTHONPATH=. .venv/bin/python scripts/compare_chunking.py [policy.md]` (embeddings cached, re-runs are free).
+
+## Self-check
+
+Quiz with my answers and the corrections: [04_quiz_chunking_and_embeddings.md](04_quiz_chunking_and_embeddings.md).
