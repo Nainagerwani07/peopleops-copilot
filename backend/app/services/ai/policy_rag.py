@@ -2,6 +2,7 @@
 
 Two-layer refusal (docs/learning/02_chunking_and_embeddings.md):
   1. Code (guardrail): if the best chunk scores below MIN_SCORE, refuse without calling the LLM.
+     It only catches questions unrelated to HR; on-topic but uncovered ones score like real answers.
   2. Prompt: the LLM answers only from the excerpts, says when they don't contain the answer,
      and treats the excerpts as data, not instructions.
 """
@@ -15,7 +16,7 @@ from app.services.ai.llm import get_chat_model
 from app.services.ai.vector_store import SearchHit, get_collection, search
 
 TOP_K = 3
-MIN_SCORE = 0.63  # placeholder from 7 hand-tried questions; set it from the retrieval eval
+MIN_SCORE = 0.56  # off-topic filter only (eval: unrelated questions 0.50-0.555, real answers from 0.574); near misses are layer 2's job
 NOT_FOUND = "I couldn't find this in the HR policies. Please contact HR for help."
 
 
