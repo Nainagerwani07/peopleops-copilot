@@ -37,7 +37,7 @@ async def test_rejects_empty_message(client, org):
     assert resp.status_code == 422
 
 
-@pytest.mark.parametrize("intent", ["POLICY_QA", "SQL_QUERY", "HR_ACTION", "UNKNOWN"])
+@pytest.mark.parametrize("intent", ["SQL_QUERY", "HR_ACTION", "UNKNOWN"])  # POLICY_QA: test_chat_policy.py
 async def test_routes_and_audits_success(client, org, session_factory, monkeypatch, intent):
     fake_intent(monkeypatch, intent)
     resp = await client.post(URL, json={"message": "hello"}, headers=auth(org.employee_a))

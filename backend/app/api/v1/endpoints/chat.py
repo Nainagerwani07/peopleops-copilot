@@ -10,6 +10,7 @@ from app.schemas.chat import AIChatRequest, ChatMessageCreate, ChatSessionCreate
 from app.services.ai.audit import log_ai_event
 from app.services.ai.intent import classify_intent
 from app.services.ai.permissions import Action, PermissionDenied, ensure
+from app.services.ai.policy_rag import answer_question
 from app.services.auth import get_current_user
 
 router = APIRouter()
@@ -25,6 +26,44 @@ INTENT_ACTION: dict[str, Action] = {
 UNKNOWN_ANSWER = "I can help with HR policies, people and project data, and HR tasks such as leave and tickets."
 
 
+def ai_unavailable() -> JSONResponse:
+    return JSONResponse(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        content=error_response("AI_UNAVAILABLE", "The assistant is temporarily unavailable. Please try again shortly."),
+    )
+
+
+async def answer_policy(db: AsyncSession, user: Employee, message: str) -> dict | JSONResponse:
+    """Run the policy RAG and audit the outcome. Caller has already checked ASK_POLICY."""
+    try:
+        result = await answer_question(message)
+    except Exception:
+        logger.exception("ai_policy_rag_failed", user_id=user.id)
+        await log_ai_event(db, user=user, message=message, status="ERROR", intent="POLICY_QA", tool_name="policy_rag")
+        return ai_unavailable()
+    await log_ai_event(
+        db, user=user, message=message, status="SUCCESS" if result.found else "NO_ANSWER",
+        intent="POLICY_QA", tool_name="policy_rag",
+    )
+    return result.model_dump()
+
+
+@router.post("/policy")
+async def chat_policy(
+    payload: AIChatRequest,
+    current_user: Employee = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Policy RAG directly, without intent classification: auth → permission → RAG → audit."""
+    try:
+        ensure(current_user.role, Action.ASK_POLICY)
+    except PermissionDenied as exc:
+        await log_ai_event(db, user=current_user, message=payload.message, status="DENIED", intent="POLICY_QA")
+        return JSONResponse(status_code=status.HTTP_403_FORBIDDEN, content=error_response("AI_PERMISSION_DENIED", str(exc)))
+    data = await answer_policy(db, current_user, payload.message)
+    return data if isinstance(data, JSONResponse) else success_response(data)
+
+
 @router.post("/router")
 async def chat_router(
     payload: AIChatRequest,
@@ -38,10 +77,7 @@ async def chat_router(
         # Full error goes to server logs only; the user gets a generic message (no internals leaked).
         logger.exception("ai_intent_failed", user_id=current_user.id)
         await log_ai_event(db, user=current_user, message=payload.message, status="ERROR", tool_name="intent_classifier")
-        return JSONResponse(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            content=error_response("AI_UNAVAILABLE", "The assistant is temporarily unavailable. Please try again shortly."),
-        )
+        return ai_unavailable()
 
     action = INTENT_ACTION.get(result.intent)
     if action is not None:
@@ -54,7 +90,13 @@ async def chat_router(
                 content=error_response("AI_PERMISSION_DENIED", str(exc)),
             )
 
-    # Agents arrive in M2 (policy RAG), M3 (SQL), M4 (HR actions).
+    if result.intent == "POLICY_QA":
+        data = await answer_policy(db, current_user, payload.message)
+        if isinstance(data, JSONResponse):
+            return data
+        return success_response({"intent": result.intent, "confidence": result.confidence, **data})
+
+    # Agents arrive in M3 (SQL) and M4 (HR actions).
     answer = UNKNOWN_ANSWER if result.intent == "UNKNOWN" else f"The {result.intent} agent is not built yet."
     await log_ai_event(db, user=current_user, message=payload.message, status="SUCCESS", intent=result.intent)
     return success_response({"intent": result.intent, "confidence": result.confidence, "answer": answer})
